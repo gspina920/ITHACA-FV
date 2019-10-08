@@ -49,29 +49,27 @@ class tutorial18: public unsteadyNS
         volVectorField& U;
         volScalarField& p;
 
-        void offlineSolve()
+        void offlineSolve(Eigen::MatrixXd par_BC)
         {
-            //Vector<double> inl(1, 0, 0);
+            Vector<double> inl(0, 0, 0);
             List<scalar> mu_now(1);
 
             if (offline)
             {
                 ITHACAstream::read_fields(Ufield, U, "./ITHACAoutput/Offline/");
                 ITHACAstream::read_fields(Pfield, p, "./ITHACAoutput/Offline/");
-                mu_samples =
-                    ITHACAstream::readMatrix("./ITHACAoutput/Offline/mu_samples_mat.txt");
             }
             else
             {
-                for (label i = 0; i < mu.cols(); i++)
+
+ 		for (label k = 0; k < inletIndex.rows(); k++)
                 {
-                    //inl[0] = mu(0, i);
-                    mu_now[0] = mu(0, i);
-                    //assignBC(U, BCind, inl);
-                    //assignIF(U, inl);
-                    //change_viscosity( mu(0, i));
-                    truthSolve(mu_now);
+		    inl[inletIndex(k,1)] = par_BC(0, 0);
+                    assignBC(U, inletIndex(0, 0), inl);
                 }
+                mu_now[0] = mu(0, 0);
+                truthSolve(mu_now);
+
             }
         }
 };
@@ -83,6 +81,10 @@ int main(int argc, char* argv[])
 {
     // Construct the tutorial04 object
     tutorial18 example(argc, argv);
+    // the offline samples for the boundary conditions
+    word par_offline_BC("./par_offline_BC");
+    Eigen::MatrixXd par_off_BC = ITHACAstream::readMatrix(par_offline_BC);
+
     // Read parameters from ITHACAdict file
     ITHACAparameters para;
     int NmodesUout = para.ITHACAdict->lookupOrDefault<int>("NmodesUout", 15);
@@ -108,97 +110,92 @@ int main(int argc, char* argv[])
     example.inletIndex(0, 1) = 2;
     // Time parameters
     example.startTime = 0.0;
-    example.finalTime = 1;
-    example.timeStep = 0.01;
-    example.writeEvery = 0.01;
+    example.finalTime = 250.0;
+    example.timeStep = 0.1;
+    example.writeEvery = 0.1;
     // Perform The Offline Solve;
-    example.offlineSolve();
-    // Solve the supremizer problem
-    // example.solvesupremizer();
-    // Search the lift function
-    example.liftSolve();
-    // Normalize the lifting function
-    ITHACAutilities::normalizeFields(example.liftfield);
-    // Create homogeneous basis functions for velocity
-    example.computeLift(example.Ufield, example.liftfield, example.Uomfield);
-    // Perform a POD decomposition for velocity and pressure
-    ITHACAPOD::getModes(example.Uomfield, example.Umodes, example.podex, 0, 0,
-                        NmodesUout);
-    ITHACAPOD::getModes(example.Pfield, example.Pmodes, example.podex, 0, 0,
-                        NmodesPout);
-   // ITHACAPOD::getModes(example.supfield, example.supmodes, example.podex,
-      //                  example.supex, 1, NmodesPPEout);
-std::cout <<"Bug 1" << std::endl;
-    example.projectPPE("./Matrices", NmodesUproj, NmodesPproj, NmodesSUPproj);
-std::cout <<"Bug 2" << std::endl;
-    reducedUnsteadyNS reduced(example);
-std::cout <<"Bug 3" << std::endl;
-    // Set values of the reduced stuff
-    reduced.nu = 0.0000002;
-std::cout <<"Bug 4" << std::endl;
-    reduced.tstart = 0.0;
-    reduced.finalTime = 1.0;
-    reduced.dt = 0.01;
-    reduced.storeEvery = 0.01;
-    reduced.exportEvery = 0.01;
-std::cout <<"Bug 5" << std::endl;
-    // Set the online velocity
-    Eigen::MatrixXd vel_now(1, 1);
-    vel_now(0, 0) = 0.002;
-std::cout <<"Bug 6" << std::endl;
-    reduced.solveOnline_PPE(vel_now);
-std::cout <<"Bug 7" << std::endl;
-    // Reconstruct the solution and export it
-    reduced.reconstruct_PPE("./ITHACAoutput/ReconstructionPPE/");
-    // Calculate error between online- and corresponding full order solution
-	Eigen::MatrixXd L2errorMatrixU = ITHACAutilities::error_listfields(
-
-	example.Ufield, reduced.UREC);
-
-	Eigen::MatrixXd L2errorMatrixP = ITHACAutilities::error_listfields(
-
-	example.Pfield, reduced.PREC);
-
-	//Export the matrix containing the error
-
-	ITHACAstream::exportMatrix(L2errorMatrixU, "L2errorMatrixU", "eigen",
-
-	"./ITHACAoutput/l2error");
-
-	ITHACAstream::exportMatrix(L2errorMatrixP, "L2errorMatrixP", "eigen",
-
-	"./ITHACAoutput/l2error");
-
-
-
-
-
-	//Post-Process
-
-	Eigen::MatrixXd PostP(example.Ufield.size(), 2);
-
-
-
-	for (label i = 0; i < example.Ufield.size(); i++)
-
-	{
-
-	PostP(i, 0) = 0.5*fvc::domainIntegrate(example.Ufield[i] & example.Ufield[i]).value();
-
-
-
-	PostP(i, 1) = 0.5*fvc::domainIntegrate(reduced.UREC[i] & reduced.UREC[i]).value();
-
-
-
-	}
-
-
-
-	ITHACAstream::exportMatrix(PostP, "PostP", "eigen", "./ITHACAoutput/PostProcess");
-
+    example.offlineSolve(par_off_BC);
     exit(0);
 }
+//  // Solve the supremizer problem
+//  example.solvesupremizer();
+//  // Search the lift function
+//  example.liftSolve();
+//  // Normalize the lifting function
+//  ITHACAutilities::normalizeFields(example.liftfield);
+//  // Create homogeneous basis functions for velocity
+//  example.computeLift(example.Ufield, example.liftfield, example.Uomfield);
+//  // Perform a POD decomposition for velocity and pressure
+//  ITHACAPOD::getModes(example.Uomfield, example.Umodes, example.podex, 0, 0,
+//                      NmodesUout);
+//  ITHACAPOD::getModes(example.Pfield, example.Pmodes, example.podex, 0, 0,
+//                      NmodesPout);
+//  ITHACAPOD::getModes(example.supfield, example.supmodes, example.podex,
+//                      example.supex, 1, NmodesSUPout);
+//  example.projectSUP("./Matrices", NmodesUproj, NmodesPproj, NmodesSUPproj);
+//  reducedUnsteadyNS reduced(example);
+//  // Set values of the reduced stuff
+//  reduced.nu = 0.0000002;
+//  reduced.tstart = 0.0;
+//  reduced.finalTime = 1;
+//  reduced.dt = 0.01;
+//  reduced.storeEvery = 0.01;
+//  reduced.exportEvery = 0.01;
+//  // Set the online velocity
+//  Eigen::MatrixXd vel_now(1, 1);
+//  vel_now(0, 0) = 0.002;
+//  reduced.solveOnline_sup(vel_now);
+//  // Reconstruct the solution and export it
+//  reduced.reconstruct_sup("./ITHACAoutput/ReconstructionSUP/");
+//  // Calculate error between online- and corresponding full order solution
+//Eigen::MatrixXd L2errorMatrixU = ITHACAutilities::error_listfields(
+//
+//example.Ufield, reduced.UREC);
+//
+//Eigen::MatrixXd L2errorMatrixP = ITHACAutilities::error_listfields(
+//
+//example.Pfield, reduced.PREC);
+//
+////Export the matrix containing the error
+//
+//ITHACAstream::exportMatrix(L2errorMatrixU, "L2errorMatrixU", "eigen",
+//
+//"./ITHACAoutput/l2error");
+//
+//ITHACAstream::exportMatrix(L2errorMatrixP, "L2errorMatrixP", "eigen",
+//
+//"./ITHACAoutput/l2error");
+//
+//
+//
+//
+//
+////Post-Process
+//
+//Eigen::MatrixXd PostP(example.Ufield.size(), 2);
+//
+//
+//
+//for (label i = 0; i < example.Ufield.size(); i++)
+//
+//{
+//
+//PostP(i, 0) = 0.5*fvc::domainIntegrate(example.Ufield[i] & example.Ufield[i]).value();
+//
+//
+//
+//PostP(i, 1) = 0.5*fvc::domainIntegrate(reduced.UREC[i] & reduced.UREC[i]).value();
+//
+//
+//
+//}
+//
+//
+//
+//ITHACAstream::exportMatrix(PostP, "PostP", "eigen", "./ITHACAoutput/PostProcess");
+//
+//  exit(0);
+//}
 
 
 
